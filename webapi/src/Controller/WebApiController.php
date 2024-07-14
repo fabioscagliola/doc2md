@@ -7,9 +7,14 @@ use Exception;
 use Monolog\Formatter\LineFormatter;
 use Monolog\Handler\StreamHandler;
 use Monolog\Logger;
+use PhpOffice\PhpWord\Element\AbstractElement;
+use PhpOffice\PhpWord\Element\Text;
+use PhpOffice\PhpWord\Element\TextBreak;
 use PhpOffice\PhpWord\Element\TextRun;
 use PhpOffice\PhpWord\Element\Title;
 use PhpOffice\PhpWord\IOFactory;
+use PhpOffice\PhpWord\Style\Font;
+use PhpOffice\PhpWord\Style\Paragraph;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Component\HttpFoundation\Request;
@@ -85,23 +90,27 @@ class WebApiController extends AbstractController
             foreach ($phpWord->getSections() as $section) {
                 foreach ($section->getElements() as $element) {
                     if ($element instanceof Title) {
-                        $level = $element->getDepth();
-                        $level++;  // Increase the level of the title by one
+                        $depth = $element->getDepth();
+                        $depth++;  // The "Title" style has a depth of zero
                         $text = $element->getText();
                         if ($text instanceof TextRun) {
                             $text = $text->getText();
                         }
-                        $markdown .= str_repeat('#', $level);
+                        $markdown .= str_repeat('#', $depth);
                         $markdown .= ' ';
                         $markdown .= $text;
                         $markdown .= PHP_EOL;
                         $markdown .= PHP_EOL;
                     }
                     else if ($element instanceof TextRun) {
-                        // TODO: Line breaks
-                        // TODO: Bold
-                        // TODO: Italic
-                        $markdown .= $element->getText();
+                        $paragraphStyle = $element->getParagraphStyle();
+                        if ($paragraphStyle instanceof Paragraph) {
+                            $paragraphStyle = $paragraphStyle->getStyleName();
+                        }
+                        if ($paragraphStyle === 'Quote') {
+                            $markdown .= '> ';
+                        }
+                        $markdown .= static::doElements($element->getElements());
                         $markdown .= PHP_EOL;
                         $markdown .= PHP_EOL;
                     }
@@ -114,9 +123,61 @@ class WebApiController extends AbstractController
             unlink($tempFile);
         }
 
-        return $this->json([
-            'markdown' => $markdown,
-        ], Response::HTTP_OK);
+        return new Response($markdown, Response::HTTP_OK, ['Content-Type' => 'text/markdown']);
+    }
+
+    protected static function doElements(array $elements): string
+    {
+        $markdown = '';
+        $length = count($elements);
+        foreach ($elements as $i => $iValue) {
+            $element = $iValue;
+            $prevElement = $i > 0 ? $elements[$i - 1] : null;
+            $nextElement = $i + 1 < $length ? $elements[$i + 1] : null;
+            if ($element instanceof TextBreak) {
+                $markdown .= '\\';
+                $markdown .= PHP_EOL;
+            } else if ($element instanceof Text) {
+                if (static::isTextBold($element) && !static::isTextBold($prevElement)) {
+                    $markdown .= '**';
+                }
+                if (static::isTextItalic($element) && !static::isTextItalic($prevElement)) {
+                    $markdown .= '*';
+                }
+                $markdown .= $element->getText();
+                if (static::isTextBold($element) && !static::isTextBold($nextElement)) {
+                    $markdown .= '**';
+                }
+                if (static::isTextItalic($element) && !static::isTextItalic($nextElement)) {
+                    $markdown .= '*';
+                }
+            }
+        }
+        return $markdown;
+    }
+
+    protected static function isTextBold(?AbstractElement $element): bool
+    {
+        $result = false;
+        if ($element instanceof Text) {
+            $fontStyle = $element->getFontStyle();
+            if (($fontStyle instanceof Font) && $fontStyle->isBold()) {
+                $result = true;
+            }
+        }
+        return $result;
+    }
+
+    protected static function isTextItalic(?AbstractElement $element): bool
+    {
+        $result = false;
+        if ($element instanceof Text) {
+            $fontStyle = $element->getFontStyle();
+            if ($fontStyle instanceof Font && $fontStyle->isItalic()) {
+                $result = true;
+            }
+        }
+        return $result;
     }
 }
 
