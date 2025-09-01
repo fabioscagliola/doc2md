@@ -59,6 +59,7 @@ docker exec -it doc2md bash
 And now you can convert Word documents to Markdown as if there were no tomorrow!
 
 ```
+cd /webapi
 bin/console doc2md /path/to/your/document.docx
 ```
 
